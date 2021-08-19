@@ -1,11 +1,5 @@
-# Ubeswap SDK
+# Mobius SDK
 
-[![code style: prettier](https://img.shields.io/badge/code_style-prettier-ff69b4.svg?style=flat-square)](https://github.com/prettier/prettier)
-[![Actions Status](https://github.com/Ubeswap/ubeswap-sdk/workflows/CI/badge.svg)](https://github.com/Ubeswap/ubeswap-sdk)
-[![npm version](https://img.shields.io/npm/v/@ubeswap/sdk/latest.svg)](https://www.npmjs.com/package/@ubeswap/sdk/v/latest)
-[![npm bundle size (scoped version)](https://img.shields.io/bundlephobia/minzip/@ubeswap/sdk/latest.svg)](https://bundlephobia.com/result?p=@ubeswap/sdk@latest)
-
-In-depth documentation on this SDK is available at [ubeswap.org](https://ubeswap.org/docs/v2/SDK/getting-started/).
 
 ## Running tests
 
