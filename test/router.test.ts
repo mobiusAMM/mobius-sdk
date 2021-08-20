@@ -1,6 +1,6 @@
 import JSBI from 'jsbi'
 import invariant from 'tiny-invariant'
-import { CELO, ChainId, Pair, Percent, Route, Router, Token, TokenAmount, Trade } from '../src'
+import { CELO, ChainId, MobiPair, Percent, Route, Router, Token, TokenAmount, Trade } from '../src'
 
 function checkDeadline(deadline: string[] | string): void {
   expect(typeof deadline).toBe('string')
@@ -15,9 +15,9 @@ describe('Router', () => {
   const token0 = new Token(ChainId.MAINNET, '0x0000000000000000000000000000000000000001', 18, 't0')
   const token1 = new Token(ChainId.MAINNET, '0x0000000000000000000000000000000000000002', 18, 't1')
 
-  const pair_0_1 = new Pair(new TokenAmount(token0, JSBI.BigInt(1000)), new TokenAmount(token1, JSBI.BigInt(1000)))
+  const pair_0_1 = new MobiPair(new TokenAmount(token0, JSBI.BigInt(1000)), new TokenAmount(token1, JSBI.BigInt(1000)))
 
-  const pair_weth_0 = new Pair(new TokenAmount(CELO[ChainId.MAINNET], '1000'), new TokenAmount(token0, '1000'))
+  const pair_weth_0 = new MobiPair(new TokenAmount(CELO[ChainId.MAINNET], '1000'), new TokenAmount(token0, '1000'))
 
   describe('#swapCallParameters', () => {
     describe('exact in', () => {

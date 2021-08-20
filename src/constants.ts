@@ -20,9 +20,44 @@ export enum Rounding {
   ROUND_UP
 }
 
+type PoolInfo = {
+  name: string
+  address: string
+  lpToken: string
+  tokens: string[]
+}
+
 export const FACTORY_ADDRESS = '0x62d5b84bE28a183aBB507E125B384122D2C25fAE'
 
 export const INIT_CODE_HASH = '0xb3b8ff62960acea3a88039ebcf80699f15786f1b17cebd82802f7375827a339c'
+
+export const USD_POOL_ADDRESSES = {
+  [ChainId.MAINNET]: null,
+  [ChainId.ALFAJORES]: '0xe83e3750eeE33218586015Cf3a34c6783C0F63Ac',
+  [ChainId.BAKLAVA]: null
+}
+
+export const POOLS_TO_TOKENS: { [c: number]: PoolInfo[] } = {
+  [ChainId.MAINNET]: [],
+  [ChainId.ALFAJORES]: [
+    {
+      name: 'Staked Celo Pool',
+      tokens: ['0xf194afdf50b03e69bd7d057c1aa9e10c9954e4c9', '0xBDeedCDA79BAbc4Eb509aB689895a3054461691e'],
+      address: '',
+      lpToken: ''
+    },
+    {
+      name: 'US Dollar Pool',
+      address: '0xe83e3750eeE33218586015Cf3a34c6783C0F63Ac',
+      tokens: [
+        '0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1',
+        '0x695218A22c805Bab9C6941546CF5395F169Ad871',
+        '0x4DA9471c101e0cac906E52DF4f00943b21863efF'
+      ],
+      lpToken: '0x751c70e8f062071bDE19597e2766a5078709FCb9'
+    }
+  ]
+}
 
 export const MINIMUM_LIQUIDITY = JSBI.BigInt(1000)
 

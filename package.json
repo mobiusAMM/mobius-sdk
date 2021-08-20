@@ -1,16 +1,16 @@
 {
-  "name": "@ubeswap/sdk",
+  "name": "@mobius/sdk",
   "license": "MIT",
-  "version": "2.1.0",
-  "description": "🛠 An SDK for building applications on top of Ubeswap.",
+  "version": "1.0.0",
+  "description": "🛠 An SDK for building applications on top of Mobius.",
   "main": "dist/index.js",
   "typings": "dist/index.d.ts",
   "files": [
     "dist"
   ],
-  "repository": "https://github.com/Ubeswap/ubeswap-sdk.git",
+  "repository": "https://github.com/mobiusAMM/mobius-sdk.git",
   "keywords": [
-    "ubeswap",
+    "mobius",
     "celo"
   ],
   "module": "dist/sdk.esm.js",

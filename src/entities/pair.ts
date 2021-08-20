@@ -2,63 +2,78 @@ import { Price } from './fractions/price'
 import { TokenAmount } from './fractions/tokenAmount'
 import invariant from 'tiny-invariant'
 import JSBI from 'jsbi'
-import { pack, keccak256 } from '@ethersproject/solidity'
-import { getCreate2Address } from '@ethersproject/address'
+import StableSwap from '../abis/StableSwap.json'
+import { Contract } from '@ethersproject/contracts'
+import { getNetwork } from '@ethersproject/networks'
+import { getDefaultProvider } from '@ethersproject/providers'
 
-import {
-  BigintIsh,
-  FACTORY_ADDRESS,
-  INIT_CODE_HASH,
-  MINIMUM_LIQUIDITY,
-  ZERO,
-  ONE,
-  FIVE,
-  _997,
-  _1000,
-  ChainId
-} from '../constants'
+import { BigintIsh, ZERO, FIVE, _997, _1000, ChainId, POOLS_TO_TOKENS } from '../constants'
 import { sqrt, parseBigintIsh } from '../utils'
 import { InsufficientReservesError, InsufficientInputAmountError } from '../errors'
 import { Token } from './token'
 
 let PAIR_ADDRESS_CACHE: { [token0Address: string]: { [token1Address: string]: string } } = {}
 
-export class Pair {
+export class MobiPair {
+  public readonly poolAddress: string
   public readonly liquidityToken: Token
-  private readonly tokenAmounts: [TokenAmount, TokenAmount]
+  private readonly tokenAmounts: [TokenAmount, TokenAmount] | [TokenAmount, TokenAmount, TokenAmount]
+  private readonly poolContract: Contract
 
-  public static getAddress(tokenA: Token, tokenB: Token): string {
-    const tokens = tokenA.sortsBefore(tokenB) ? [tokenA, tokenB] : [tokenB, tokenA] // does safety checks
+  public static async getAddress(tokenA: Token, tokenB: Token, tokenC?: Token): Promise<string> {
+    const chainId = tokenA.chainId
+    const [poolAddress] = MobiPair.getPoolInfo(tokenA, tokenB, tokenC)
+    const provider = getDefaultProvider(getNetwork(chainId))
+    const contract = new Contract(poolAddress, StableSwap.abi, provider)
 
-    if (PAIR_ADDRESS_CACHE?.[tokens[0].address]?.[tokens[1].address] === undefined) {
-      PAIR_ADDRESS_CACHE = {
-        ...PAIR_ADDRESS_CACHE,
-        [tokens[0].address]: {
-          ...PAIR_ADDRESS_CACHE?.[tokens[0].address],
-          [tokens[1].address]: getCreate2Address(
-            FACTORY_ADDRESS,
-            keccak256(['bytes'], [pack(['address', 'address'], [tokens[0].address, tokens[1].address])]),
-            INIT_CODE_HASH
-          )
-        }
-      }
-    }
-
-    return PAIR_ADDRESS_CACHE[tokens[0].address][tokens[1].address]
+    const lpToken = await contract.token()
+    return lpToken
   }
 
-  public constructor(tokenAmountA: TokenAmount, tokenAmountB: TokenAmount) {
-    const tokenAmounts = tokenAmountA.token.sortsBefore(tokenAmountB.token) // does safety checks
-      ? [tokenAmountA, tokenAmountB]
-      : [tokenAmountB, tokenAmountA]
-    this.liquidityToken = new Token(
-      tokenAmounts[0].token.chainId,
-      Pair.getAddress(tokenAmounts[0].token, tokenAmounts[1].token),
-      18,
-      'UBE-V2',
-      'Ubeswap V2'
+  public static getPoolInfo(tokenA: Token, tokenB: Token, tokenC?: Token): [string, string, string[]] {
+    const chainId = tokenA.chainId
+    const possiblePools = POOLS_TO_TOKENS[chainId].filter(
+      ({ tokens }) =>
+        tokens.includes(tokenA.address) &&
+        tokens.includes(tokenB.address) &&
+        (!tokenC || tokens.includes(tokenC.address))
     )
-    this.tokenAmounts = tokenAmounts as [TokenAmount, TokenAmount]
+    return [possiblePools[0].address, possiblePools[0].lpToken, possiblePools[0].tokens]
+  }
+
+  public constructor(tokenAmountA: TokenAmount, tokenAmountB: TokenAmount, tokenAmountC?: TokenAmount) {
+    const chainId = tokenAmountA.token.chainId
+    const provider = getDefaultProvider(getNetwork(chainId))
+
+    const [poolAddress, lpToken, tokenOrder] = MobiPair.getPoolInfo(
+      tokenAmountA.token,
+      tokenAmountB.token,
+      tokenAmountC?.token
+    )
+
+    this.poolAddress = poolAddress
+    this.poolContract = new Contract(this.poolAddress, StableSwap.abi, provider)
+    const tokenAmounts = tokenOrder.map(address => {
+      switch (address) {
+        case tokenAmountA.token.address:
+          return tokenAmountA
+
+        case tokenAmountB.token.address:
+          return tokenAmountB
+
+        case tokenAmountC?.token.address:
+          return tokenAmountC || tokenAmountA
+        default:
+          return tokenAmountA
+      }
+    })
+
+    this.liquidityToken = new Token(tokenAmounts[0].token.chainId, lpToken, 18, 'Mobi-V2', 'Mobius V2')
+    if (tokenAmounts.length === 3) {
+      this.tokenAmounts = tokenAmounts as [TokenAmount, TokenAmount, TokenAmount]
+    } else {
+      this.tokenAmounts = tokenAmounts as [TokenAmount, TokenAmount]
+    }
   }
 
   /**
@@ -66,7 +81,7 @@ export class Pair {
    * @param token to check
    */
   public involvesToken(token: Token): boolean {
-    return token.equals(this.token0) || token.equals(this.token1)
+    return token.equals(this.token0) || token.equals(this.token1) || (!!this.token2 && token.equals(this.token2))
   }
 
   /**
@@ -107,6 +122,10 @@ export class Pair {
     return this.tokenAmounts[1].token
   }
 
+  public get token2(): Token | undefined {
+    return this.tokenAmounts[2]?.token
+  }
+
   public get reserve0(): TokenAmount {
     return this.tokenAmounts[0]
   }
@@ -115,71 +134,59 @@ export class Pair {
     return this.tokenAmounts[1]
   }
 
-  public reserveOf(token: Token): TokenAmount {
-    invariant(this.involvesToken(token), 'TOKEN')
-    return token.equals(this.token0) ? this.reserve0 : this.reserve1
+  public get reserve2(): TokenAmount | undefined {
+    return this.tokenAmounts[2]
   }
 
-  public getOutputAmount(inputAmount: TokenAmount): [TokenAmount, Pair] {
+  public reserveOf(token: Token): TokenAmount {
+    invariant(this.involvesToken(token), 'TOKEN')
+    return token.equals(this.token0)
+      ? this.reserve0
+      : token.equals(this.token1)
+      ? this.reserve1
+      : this.reserve2 || this.reserve0
+  }
+
+  public async getOutputAmount(inputAmount: TokenAmount, outputToken: Token): Promise<TokenAmount> {
     invariant(this.involvesToken(inputAmount.token), 'TOKEN')
     if (JSBI.equal(this.reserve0.raw, ZERO) || JSBI.equal(this.reserve1.raw, ZERO)) {
       throw new InsufficientReservesError()
     }
-    const inputReserve = this.reserveOf(inputAmount.token)
-    const outputReserve = this.reserveOf(inputAmount.token.equals(this.token0) ? this.token1 : this.token0)
-    const inputAmountWithFee = JSBI.multiply(inputAmount.raw, _997)
-    const numerator = JSBI.multiply(inputAmountWithFee, outputReserve.raw)
-    const denominator = JSBI.add(JSBI.multiply(inputReserve.raw, _1000), inputAmountWithFee)
-    const outputAmount = new TokenAmount(
-      inputAmount.token.equals(this.token0) ? this.token1 : this.token0,
-      JSBI.divide(numerator, denominator)
-    )
+    const contract = this.poolContract
+    const i = this.tokenAmounts.findIndex(({ token }) => token.address === inputAmount.token.address)
+    const j = this.tokenAmounts.findIndex(({ token }) => token.address === outputToken.address)
+    const expectedOut = contract.get_dy(i, j, inputAmount.raw)
+
+    const outputAmount = new TokenAmount(outputToken, expectedOut)
     if (JSBI.equal(outputAmount.raw, ZERO)) {
       throw new InsufficientInputAmountError()
     }
-    return [outputAmount, new Pair(inputReserve.add(inputAmount), outputReserve.subtract(outputAmount))]
+    return outputAmount
   }
 
-  public getInputAmount(outputAmount: TokenAmount): [TokenAmount, Pair] {
-    invariant(this.involvesToken(outputAmount.token), 'TOKEN')
-    if (
-      JSBI.equal(this.reserve0.raw, ZERO) ||
-      JSBI.equal(this.reserve1.raw, ZERO) ||
-      JSBI.greaterThanOrEqual(outputAmount.raw, this.reserveOf(outputAmount.token).raw)
-    ) {
-      throw new InsufficientReservesError()
-    }
-
-    const outputReserve = this.reserveOf(outputAmount.token)
-    const inputReserve = this.reserveOf(outputAmount.token.equals(this.token0) ? this.token1 : this.token0)
-    const numerator = JSBI.multiply(JSBI.multiply(inputReserve.raw, outputAmount.raw), _1000)
-    const denominator = JSBI.multiply(JSBI.subtract(outputReserve.raw, outputAmount.raw), _997)
-    const inputAmount = new TokenAmount(
-      outputAmount.token.equals(this.token0) ? this.token1 : this.token0,
-      JSBI.add(JSBI.divide(numerator, denominator), ONE)
-    )
-    return [inputAmount, new Pair(inputReserve.add(inputAmount), outputReserve.subtract(outputAmount))]
-  }
-
-  public getLiquidityMinted(
+  public async getLiquidityMinted(
     totalSupply: TokenAmount,
     tokenAmountA: TokenAmount,
-    tokenAmountB: TokenAmount
-  ): TokenAmount {
+    tokenAmountB: TokenAmount,
+    tokenAmountC?: TokenAmount
+  ): Promise<TokenAmount> {
     invariant(totalSupply.token.equals(this.liquidityToken), 'LIQUIDITY')
-    const tokenAmounts = tokenAmountA.token.sortsBefore(tokenAmountB.token) // does safety checks
-      ? [tokenAmountA, tokenAmountB]
-      : [tokenAmountB, tokenAmountA]
+
+    const tokenMap = {
+      [tokenAmountA.token.address]: tokenAmountA,
+      [tokenAmountB.token.address]: tokenAmountB,
+      [tokenAmountC?.token.address || '0x000']: tokenAmountC || tokenAmountA
+    }
+
+    const tokenAmounts = this.tokenAmounts.map(({ token }) => tokenMap[token.address])
     invariant(tokenAmounts[0].token.equals(this.token0) && tokenAmounts[1].token.equals(this.token1), 'TOKEN')
 
     let liquidity: JSBI
-    if (JSBI.equal(totalSupply.raw, ZERO)) {
-      liquidity = JSBI.subtract(sqrt(JSBI.multiply(tokenAmounts[0].raw, tokenAmounts[1].raw)), MINIMUM_LIQUIDITY)
-    } else {
-      const amount0 = JSBI.divide(JSBI.multiply(tokenAmounts[0].raw, totalSupply.raw), this.reserve0.raw)
-      const amount1 = JSBI.divide(JSBI.multiply(tokenAmounts[1].raw, totalSupply.raw), this.reserve1.raw)
-      liquidity = JSBI.lessThanOrEqual(amount0, amount1) ? amount0 : amount1
-    }
+    const contract = this.poolContract
+    liquidity = await contract.calc_token_amount(
+      tokenAmounts.map(({ raw }) => raw),
+      true
+    )
     if (!JSBI.greaterThan(liquidity, ZERO)) {
       throw new InsufficientInputAmountError()
     }

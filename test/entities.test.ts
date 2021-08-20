@@ -1,5 +1,5 @@
 import invariant from 'tiny-invariant'
-import { CELO as _CGLD, ChainId, Pair, Rounding, Route, Token, TokenAmount, Trade, TradeType } from '../src'
+import { CELO as _CGLD, ChainId, MobiPair, Rounding, Route, Token, TokenAmount, Trade, TradeType } from '../src'
 
 const ADDRESSES = [
   '0x0000000000000000000000000000000000000001',
@@ -31,18 +31,18 @@ describe('entities', () => {
         })
       })
 
-      let pairs: Pair[]
-      it('Pair', () => {
+      let pairs: MobiPair[]
+      it('MobiPair', () => {
         pairs = [
-          new Pair(
+          new MobiPair(
             new TokenAmount(tokens[0], decimalize(1, tokens[0].decimals)),
             new TokenAmount(tokens[1], decimalize(1, tokens[1].decimals))
           ),
-          new Pair(
+          new MobiPair(
             new TokenAmount(tokens[1], decimalize(1, tokens[1].decimals)),
             new TokenAmount(tokens[2], decimalize(1, tokens[2].decimals))
           ),
-          new Pair(
+          new MobiPair(
             new TokenAmount(tokens[2], decimalize(1, tokens[2].decimals)),
             new TokenAmount(CGLD, decimalize(1234, CGLD.decimals))
           )
@@ -102,7 +102,7 @@ describe('entities', () => {
         it('TradeType.EXACT_INPUT', () => {
           route = new Route(
             [
-              new Pair(
+              new MobiPair(
                 new TokenAmount(tokens[1], decimalize(5, tokens[1].decimals)),
                 new TokenAmount(CGLD, decimalize(10, CGLD.decimals))
               )
@@ -152,7 +152,7 @@ describe('entities', () => {
           if ([9, 18].includes(tokens[1].decimals)) {
             const route = new Route(
               [
-                new Pair(
+                new MobiPair(
                   new TokenAmount(tokens[1], decimalize(1, tokens[1].decimals)),
                   new TokenAmount(
                     CGLD,

@@ -2,11 +2,12 @@ import { Contract } from '@ethersproject/contracts'
 import { getNetwork } from '@ethersproject/networks'
 import { getDefaultProvider } from '@ethersproject/providers'
 import { TokenAmount } from './entities/fractions/tokenAmount'
-import { Pair } from './entities/pair'
-import IUniswapV2Pair from '@uniswap/v2-core/build/IUniswapV2Pair.json'
+import { MobiPair } from './entities/pair'
+//import IUniswapV2Pair from '@uniswap/v2-core/build/IUniswapV2Pair.json'
+import StableSwap from './abis/StableSwap.json'
 import invariant from 'tiny-invariant'
 import ERC20 from './abis/ERC20.json'
-import { ChainId } from './constants'
+import { ChainId, POOLS_TO_TOKENS } from './constants'
 import { Token } from './entities/token'
 
 let TOKEN_DECIMALS_CACHE: { [chainId: number]: { [address: string]: number } } = {
@@ -64,12 +65,29 @@ export abstract class Fetcher {
   public static async fetchPairData(
     tokenA: Token,
     tokenB: Token,
+    tokenC: Token | null,
     provider = getDefaultProvider(getNetwork(tokenA.chainId))
-  ): Promise<Pair> {
+  ): Promise<MobiPair> {
     invariant(tokenA.chainId === tokenB.chainId, 'CHAIN_ID')
-    const address = Pair.getAddress(tokenA, tokenB)
-    const [reserves0, reserves1] = await new Contract(address, IUniswapV2Pair.abi, provider).getReserves()
-    const balances = tokenA.sortsBefore(tokenB) ? [reserves0, reserves1] : [reserves1, reserves0]
-    return new Pair(new TokenAmount(tokenA, balances[0]), new TokenAmount(tokenB, balances[1]))
+    const [address, , tokens] = MobiPair.getPoolInfo(tokenA, tokenB, tokenC || undefined)
+    const tokenMap = {
+      [tokenA.address]: tokenA,
+      [tokenB.address]: tokenB,
+      [tokenC?.address || '0x00']: tokenC || tokenA
+    }
+
+    const contract = new Contract(address, StableSwap.abi, provider)
+    const balances = await contract.balances()
+    const tokensCorrectOrder = tokens.map(addr => tokenMap[addr])
+    //const balances = tokenA.sortsBefore(tokenB) ? [reserves0, reserves1] : [reserves1, reserves0]
+    if (tokens.length === 3) {
+      const [tok0, tok1, tok2] = tokensCorrectOrder
+      const [bal0, bal1, bal2] = balances
+      return new MobiPair(new TokenAmount(tok0, bal0), new TokenAmount(tok1, bal1), new TokenAmount(tok2, bal2))
+    }
+    const [tok0, tok1] = tokensCorrectOrder
+    const [bal0, bal1] = balances
+
+    return new MobiPair(new TokenAmount(tok0, bal0), new TokenAmount(tok1, bal1))
   }
 }
